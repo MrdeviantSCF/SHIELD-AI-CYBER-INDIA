@@ -1,0 +1,147 @@
+@import "tailwindcss";
+
+:root {
+  --background: #05070a;
+  --foreground: #e7edf3;
+
+  /* Shield brand palette — deep navy/black base, cool neutral type, controlled cyan accent */
+  --shield-void: #030507;
+  --shield-navy-950: #05070a;
+  --shield-navy-900: #070b10;
+  --shield-navy-800: #0b1119;
+  --shield-navy-700: #101a24;
+  --shield-navy-600: #16232f;
+  --shield-line: #1b2836;
+  --shield-cyan: #35e0ff;
+  --shield-cyan-dim: #1c8fa8;
+  --shield-cyan-soft: rgba(53, 224, 255, 0.12);
+  --shield-amber: #e3a63f;
+  --shield-text: #e7edf3;
+  --shield-text-muted: #92a3b4;
+  --shield-text-dim: #5b6b7a;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  --color-shield-void: var(--shield-void);
+  --color-shield-navy-950: var(--shield-navy-950);
+  --color-shield-navy-900: var(--shield-navy-900);
+  --color-shield-navy-800: var(--shield-navy-800);
+  --color-shield-navy-700: var(--shield-navy-700);
+  --color-shield-navy-600: var(--shield-navy-600);
+  --color-shield-line: var(--shield-line);
+  --color-shield-cyan: var(--shield-cyan);
+  --color-shield-cyan-dim: var(--shield-cyan-dim);
+  --color-shield-amber: var(--shield-amber);
+  --color-shield-text: var(--shield-text);
+  --color-shield-text-muted: var(--shield-text-muted);
+  --color-shield-text-dim: var(--shield-text-dim);
+}
+
+* {
+  border-color: var(--shield-line);
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Reusable premium-forensic visual utilities                             */
+/* ---------------------------------------------------------------------- */
+
+.shield-grid-bg {
+  background-image:
+    linear-gradient(to right, rgba(53, 224, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(53, 224, 255, 0.045) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+
+.shield-radial-glow {
+  background: radial-gradient(60% 50% at 50% 0%, rgba(53, 224, 255, 0.14), transparent 70%);
+}
+
+.shield-glass {
+  background: linear-gradient(180deg, rgba(16, 26, 36, 0.7), rgba(7, 11, 16, 0.55));
+  border: 1px solid var(--shield-line);
+  backdrop-filter: blur(10px);
+}
+
+.shield-card {
+  background: linear-gradient(180deg, rgba(16, 26, 36, 0.55), rgba(7, 11, 16, 0.35));
+  border: 1px solid var(--shield-line);
+  transition: border-color 200ms ease, transform 200ms ease, box-shadow 200ms ease;
+}
+
+.shield-card:hover {
+  border-color: rgba(53, 224, 255, 0.35);
+  box-shadow: 0 0 0 1px rgba(53, 224, 255, 0.08), 0 20px 60px -30px rgba(53, 224, 255, 0.25);
+}
+
+.shield-text-gradient {
+  background: linear-gradient(90deg, #ffffff 0%, #cfeffb 45%, var(--shield-cyan) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.shield-scanline::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.015) 0px,
+    rgba(255, 255, 255, 0.015) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+.shield-focus-ring:focus-visible {
+  outline: 2px solid var(--shield-cyan);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+::selection {
+  background: rgba(53, 224, 255, 0.25);
+  color: #ffffff;
+}
+
+/* Thin, forensic-style scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--shield-navy-950);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--shield-navy-600);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--shield-cyan-dim);
+}
