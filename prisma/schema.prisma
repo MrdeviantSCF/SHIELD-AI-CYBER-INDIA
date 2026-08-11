@@ -1,0 +1,683 @@
+// ============================================================================
+// SHIELD CYBER FORENSIC INVESTIGATION — Database Schema
+// PostgreSQL + Prisma
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// ENUMS
+// ----------------------------------------------------------------------------
+
+enum RoleName {
+  SUPER_ADMIN
+  ADMIN
+  INVESTIGATOR
+  ANALYST
+  CLIENT
+  SUPPORT
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  INVITED
+  DEACTIVATED
+}
+
+enum CasePriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum VerificationResult {
+  SUCCESS
+  FAILURE
+}
+
+enum DocumentCategory {
+  CASE_INTAKE
+  EVIDENCE
+  CLIENT_DOCUMENTS
+  INVESTIGATION_UPDATES
+  ANALYSIS
+  REPORTS
+  FINAL_REPORT
+  SUPPORTING_DOCUMENTS
+  AUTHORIZATION_DOCUMENTS
+}
+
+enum DocumentApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum EvidenceStatus {
+  COLLECTED
+  IN_CUSTODY
+  UNDER_EXAMINATION
+  RETURNED
+  ARCHIVED
+  DESTROYED
+}
+
+enum CustodyEventType {
+  COLLECTED
+  RECEIVED
+  TRANSFERRED
+  EXAMINED
+  RETURNED
+  ARCHIVED
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  WHATSAPP
+  SMS
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  READ
+}
+
+enum ContactStatus {
+  NEW
+  CONTACTED
+  IN_PROGRESS
+  CONVERTED
+  CLOSED
+}
+
+enum AuditResult {
+  SUCCESS
+  FAILURE
+  DENIED
+}
+
+enum ChatSessionAudience {
+  PUBLIC
+  CLIENT
+  STAFF
+}
+
+// ----------------------------------------------------------------------------
+// AUTH / RBAC
+// ----------------------------------------------------------------------------
+
+model User {
+  id                String     @id @default(uuid())
+  email             String     @unique
+  passwordHash      String
+  name              String
+  phone             String?
+  status            UserStatus @default(ACTIVE)
+  mustChangePassword Boolean   @default(false)
+  mfaEnabled        Boolean    @default(false)
+  mfaSecret         String?
+  failedLoginCount  Int        @default(0)
+  lockedUntil       DateTime?
+  lastLoginAt       DateTime?
+  lastLoginIp       String?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  deletedAt         DateTime?
+
+  roles             UserRole[]
+  sessions          Session[]
+  client            Client?
+  investigator      Investigator?
+  passwordResets    PasswordResetToken[]
+  auditLogs         AuditLog[]            @relation("AuditActor")
+  notifications     Notification[]
+  uploadedDocuments Document[]            @relation("DocumentUploadedBy")
+  documentVersions  DocumentVersion[]     @relation("DocumentVersionUploadedBy")
+  caseUpdatesAuthored CaseUpdate[]        @relation("CaseUpdateAuthor")
+  custodyEventsActor  EvidenceCustodyEvent[] @relation("CustodyActor")
+  chatSessions      ChatSession[]
+  contentEdits      ContentBlock[]        @relation("ContentEditedBy")
+
+  @@index([email])
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        RoleName @unique
+  description String?
+  createdAt   DateTime @default(now())
+
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String @id @default(uuid())
+  key         String @unique // e.g. case.read
+  description String?
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  tokenHash    String   @unique
+  userAgent    String?
+  ip           String?
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime
+  revokedAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("password_reset_tokens")
+}
+
+// ----------------------------------------------------------------------------
+// CLIENTS / INVESTIGATORS
+// ----------------------------------------------------------------------------
+
+model Client {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  organization   String?
+  contactPhone   String?
+  address        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cases Case[] @relation("ClientCases")
+
+  @@map("clients")
+}
+
+model Investigator {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  designation  String?
+  specialization String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignments CaseAssignment[]
+
+  @@map("investigators")
+}
+
+// ----------------------------------------------------------------------------
+// CASE MANAGEMENT
+// ----------------------------------------------------------------------------
+
+model CaseCategory {
+  id          String   @id @default(uuid())
+  code        String   @unique // e.g. CF, DF, MP
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  cases Case[]
+
+  @@map("case_categories")
+}
+
+model CaseStatusDef {
+  id            String   @id @default(uuid())
+  key           String   @unique // e.g. CASE_REGISTERED
+  label         String
+  order         Int
+  clientVisible Boolean  @default(true)
+  isTerminal    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  cases          Case[]             @relation("CurrentStatus")
+  statusHistory  CaseStatusHistory[]
+
+  @@map("case_status_defs")
+}
+
+model CaseSequence {
+  id       String @id @default(uuid())
+  year     Int
+  category String
+  lastSeq  Int    @default(0)
+
+  @@unique([year, category])
+  @@map("case_sequences")
+}
+
+model Case {
+  id                     String       @id @default(uuid())
+  caseId                 String       @unique // SCF/2026/CF/001
+  categoryId             String
+  title                  String
+  clientId               String
+  priority               CasePriority @default(MEDIUM)
+  openDate               DateTime     @default(now())
+  currentStatusId        String
+  clientVisibleDescription String?
+  internalDescription    String?
+  verificationEnabled    Boolean      @default(false)
+  verificationTokenHash  String?
+  verificationTokenExpiresAt DateTime?
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+  closedAt               DateTime?
+  deletedAt              DateTime?
+
+  category       CaseCategory      @relation(fields: [categoryId], references: [id])
+  client         Client            @relation("ClientCases", fields: [clientId], references: [id])
+  currentStatus  CaseStatusDef     @relation("CurrentStatus", fields: [currentStatusId], references: [id])
+
+  assignments    CaseAssignment[]
+  statusHistory  CaseStatusHistory[]
+  updates        CaseUpdate[]
+  documents      Document[]
+  evidenceItems  EvidenceItem[]
+  verificationTokens VerificationToken[]
+  verificationAttempts VerificationAttempt[]
+  notifications  Notification[]
+
+  @@index([clientId])
+  @@index([categoryId])
+  @@index([currentStatusId])
+  @@map("cases")
+}
+
+model CaseAssignment {
+  id             String   @id @default(uuid())
+  caseId         String
+  investigatorId String
+  assignedAt     DateTime @default(now())
+  unassignedAt   DateTime?
+  isLead         Boolean  @default(false)
+
+  case         Case         @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  investigator Investigator @relation(fields: [investigatorId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([investigatorId])
+  @@map("case_assignments")
+}
+
+model CaseStatusHistory {
+  id         String   @id @default(uuid())
+  caseId     String
+  statusId   String
+  changedById String?
+  note       String?
+  createdAt  DateTime @default(now())
+
+  case   Case          @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  status CaseStatusDef @relation(fields: [statusId], references: [id])
+
+  @@index([caseId])
+  @@map("case_status_history")
+}
+
+model CaseUpdate {
+  id              String   @id @default(uuid())
+  caseId          String
+  authorId        String
+  clientVisible   Boolean  @default(false)
+  content         String
+  createdAt       DateTime @default(now())
+
+  case   Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  author User @relation("CaseUpdateAuthor", fields: [authorId], references: [id])
+
+  @@index([caseId])
+  @@map("case_updates")
+}
+
+// ----------------------------------------------------------------------------
+// CASE VERIFICATION
+// ----------------------------------------------------------------------------
+
+model VerificationToken {
+  id         String    @id @default(uuid())
+  caseId     String
+  tokenHash  String    @unique
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@map("verification_tokens")
+}
+
+model VerificationAttempt {
+  id         String             @id @default(uuid())
+  caseId     String?
+  caseIdText String
+  ip         String?
+  userAgent  String?
+  result     VerificationResult
+  createdAt  DateTime           @default(now())
+
+  case Case? @relation(fields: [caseId], references: [id], onDelete: SetNull)
+
+  @@index([caseId])
+  @@index([createdAt])
+  @@map("verification_attempts")
+}
+
+// ----------------------------------------------------------------------------
+// DOCUMENTS
+// ----------------------------------------------------------------------------
+
+model Document {
+  id               String                 @id @default(uuid())
+  caseId           String
+  category         DocumentCategory
+  title            String
+  clientVisible    Boolean                @default(false)
+  approvalStatus   DocumentApprovalStatus @default(PENDING)
+  uploadedById     String
+  currentVersionId String?                @unique
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  deletedAt        DateTime?
+
+  case         Case              @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  uploadedBy   User              @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
+  versions     DocumentVersion[] @relation("DocumentVersions")
+  currentVersion DocumentVersion? @relation("CurrentVersionOf", fields: [currentVersionId], references: [id])
+
+  @@index([caseId])
+  @@map("documents")
+}
+
+model DocumentVersion {
+  id            String   @id @default(uuid())
+  documentId    String
+  versionNumber Int
+  storageKey    String
+  originalFilename String
+  sanitizedFilename String
+  mimeType      String
+  sizeBytes     Int
+  sha256        String
+  uploadedById  String
+  createdAt     DateTime @default(now())
+
+  document   Document @relation("DocumentVersions", fields: [documentId], references: [id], onDelete: Cascade)
+  uploadedBy User     @relation("DocumentVersionUploadedBy", fields: [uploadedById], references: [id])
+  currentOf  Document? @relation("CurrentVersionOf")
+
+  @@unique([documentId, versionNumber])
+  @@index([documentId])
+  @@map("document_versions")
+}
+
+// ----------------------------------------------------------------------------
+// EVIDENCE / CHAIN OF CUSTODY
+// ----------------------------------------------------------------------------
+
+model EvidenceItem {
+  id                String         @id @default(uuid())
+  evidenceId        String         @unique // e.g. SCF/2026/CF/001-EV-01
+  caseId            String
+  type              String
+  description        String
+  source            String?
+  collectedAt       DateTime
+  collectedById     String?
+  collectedByName   String?
+  sha256            String?
+  storageReference  String?
+  currentCustodian  String
+  status            EvidenceStatus @default(COLLECTED)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  case          Case                    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  custodyEvents EvidenceCustodyEvent[]
+
+  @@index([caseId])
+  @@map("evidence_items")
+}
+
+model EvidenceCustodyEvent {
+  id          String            @id @default(uuid())
+  evidenceId  String
+  eventType   CustodyEventType
+  actorId     String?
+  actorName   String?
+  fromCustodian String?
+  toCustodian   String?
+  notes       String?
+  createdAt   DateTime          @default(now())
+
+  evidence EvidenceItem @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+  actor    User?        @relation("CustodyActor", fields: [actorId], references: [id])
+
+  @@index([evidenceId])
+  @@map("evidence_custody_events")
+}
+
+// ----------------------------------------------------------------------------
+// NOTIFICATIONS
+// ----------------------------------------------------------------------------
+
+model Notification {
+  id        String              @id @default(uuid())
+  userId    String
+  caseId    String?
+  channel   NotificationChannel @default(IN_APP)
+  status    NotificationStatus  @default(PENDING)
+  title     String
+  body      String
+  readAt    DateTime?
+  sentAt    DateTime?
+  createdAt DateTime            @default(now())
+
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  case Case? @relation(fields: [caseId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@map("notifications")
+}
+
+// ----------------------------------------------------------------------------
+// AUDIT LOGGING
+// ----------------------------------------------------------------------------
+
+model AuditLog {
+  id        String      @id @default(uuid())
+  actorId   String?
+  actorLabel String?
+  action    String
+  target    String?
+  result    AuditResult
+  ip        String?
+  userAgent String?
+  requestId String?
+  metadata  Json?
+  createdAt DateTime    @default(now())
+
+  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ----------------------------------------------------------------------------
+// CONTACT / ENQUIRY
+// ----------------------------------------------------------------------------
+
+model ContactRequest {
+  id              String        @id @default(uuid())
+  name            String
+  organization    String?
+  email           String
+  phone           String?
+  service         String?
+  message         String
+  preferredContact String?
+  status          ContactStatus @default(NEW)
+  ip              String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([status])
+  @@map("contact_requests")
+}
+
+// ----------------------------------------------------------------------------
+// SERVICES / CMS
+// ----------------------------------------------------------------------------
+
+model ServiceEntry {
+  id              String   @id @default(uuid())
+  slug            String   @unique
+  name            String
+  summary         String
+  whatItIs        String
+  useCases        String[]
+  workflow        String[]
+  deliverables    String[]
+  evidenceNotes   String?
+  isPublished     Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("service_entries")
+}
+
+model FaqEntry {
+  id          String   @id @default(uuid())
+  question    String
+  answer      String
+  category    String?
+  isPublished Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("faq_entries")
+}
+
+model ContentBlock {
+  id          String   @id @default(uuid())
+  key         String   @unique // e.g. about.mission, office.location.pune
+  label       String
+  value       String
+  isPlaceholder Boolean @default(true)
+  editedById  String?
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  editedBy User? @relation("ContentEditedBy", fields: [editedById], references: [id])
+
+  @@map("content_blocks")
+}
+
+model SystemSetting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("system_settings")
+}
+
+// ----------------------------------------------------------------------------
+// CHATBOT
+// ----------------------------------------------------------------------------
+
+model ChatKnowledge {
+  id          String   @id @default(uuid())
+  topic       String
+  content     String
+  tags        String[]
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("chat_knowledge")
+}
+
+model ChatSession {
+  id        String              @id @default(uuid())
+  userId    String?
+  audience  ChatSessionAudience @default(PUBLIC)
+  createdAt DateTime            @default(now())
+
+  user     User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  messages ChatMessage[]
+
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  sessionId String
+  role      String // user | assistant | system
+  content   String
+  createdAt DateTime @default(now())
+
+  session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("chat_messages")
+}
