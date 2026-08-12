@@ -15,6 +15,34 @@ const STAGES = [
   { n: "08", title: "Secure Delivery", desc: "Final deliverables are shared with authorized recipients through secure channels." },
 ];
 
+/**
+ * Sanitizes a scroll-progress input range for `useTransform`.
+ *
+ * `useScroll().scrollYProgress` is normalized to [0, 1], and Framer Motion
+ * forwards these mappings to the browser as Web Animations API keyframe
+ * offsets. The WAAPI spec requires every offset to sit within [0, 1] AND to be
+ * monotonically non-decreasing; violating either throws:
+ *
+ *   TypeError: Failed to execute 'animate' on 'Element':
+ *              Offsets must be monotonically non-decreasing.
+ *
+ * Per-stage ranges are derived from `index / STAGES.length` with a +/- lead-in
+ * offset, which produced negative values for the first stage (e.g. -0.05) and
+ * >1 values for the last stage (e.g. 1.05). This helper clamps each point into
+ * [0, 1] while carrying the previous value forward so the sequence can never
+ * decrease, keeping the original easing shape intact for every interior stage.
+ */
+function toMonotonicRange(points: number[]): number[] {
+  let previous = 0;
+  return points.map((point) => {
+    // Math.max(previous, point) clamps negatives to 0 and guarantees the
+    // sequence never decreases; Math.min(1, ...) caps the upper bound.
+    const value = Math.min(1, Math.max(previous, point));
+    previous = value;
+    return value;
+  });
+}
+
 function StageRow({
   stage,
   index,
@@ -26,9 +54,16 @@ function StageRow({
 }) {
   const start = index / STAGES.length;
   const end = (index + 1) / STAGES.length;
-  const opacity = useTransform(progress, [start - 0.05, start + 0.05, end - 0.05, end + 0.05], [0.25, 1, 1, 0.25]);
-  const x = useTransform(progress, [start - 0.05, start + 0.1], [24, 0]);
-  const lineScale = useTransform(progress, [start, end], [0, 1]);
+
+  // All three ranges are sanitized so no invalid WAAPI offset is ever emitted.
+  // Output values are unchanged, so the visual behavior is preserved.
+  const opacity = useTransform(
+    progress,
+    toMonotonicRange([start - 0.05, start + 0.05, end - 0.05, end + 0.05]),
+    [0.25, 1, 1, 0.25]
+  );
+  const x = useTransform(progress, toMonotonicRange([start - 0.05, start + 0.1]), [24, 0]);
+  const lineScale = useTransform(progress, toMonotonicRange([start, end]), [0, 1]);
 
   return (
     <motion.div style={{ opacity }} className="relative flex gap-6 py-7">
@@ -66,7 +101,13 @@ function CorrelationNode({
   const r = 120;
   const x = 150 + Math.cos(angle) * r;
   const y = 150 + Math.sin(angle) * r;
-  const opacity = useTransform(progress, [index / total - 0.1, index / total + 0.05], [0.15, 1]);
+  // Same class of defect as StageRow: `index / total - 0.1` is negative for the
+  // first node, which is an invalid WAAPI keyframe offset.
+  const opacity = useTransform(
+    progress,
+    toMonotonicRange([index / total - 0.1, index / total + 0.05]),
+    [0.15, 1]
+  );
 
   return (
     <g>
