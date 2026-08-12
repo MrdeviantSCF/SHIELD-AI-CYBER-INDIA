@@ -2,7 +2,7 @@ import { Hero } from "@/components/site/Hero";
 import { InvestigationStory } from "@/components/site/InvestigationStory";
 import { LinkButton } from "@/components/ui/Button";
 import Link from "next/link";
-import { prisma } from "@/lib/db";
+import { getPublishedServices } from "@/lib/services";
 import { ShieldCheck, Search, FileSearch, Network, Lock, ArrowRight } from "lucide-react";
 
 const CAPABILITIES = [
@@ -13,11 +13,9 @@ const CAPABILITIES = [
 ];
 
 export default async function HomePage() {
-  const services = await prisma.serviceEntry.findMany({
-    where: { isPublished: true },
-    orderBy: { sortOrder: "asc" },
-    take: 6,
-  });
+  // Resolves from the database when configured, otherwise from a static
+  // fallback, so the public homepage renders in either case.
+  const services = await getPublishedServices(6);
 
   return (
     <>

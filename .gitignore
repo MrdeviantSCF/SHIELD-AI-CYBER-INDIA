@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...but the credential-free template MUST be committed so deployments know
+# which variables are required. It contains placeholders only, never secrets.
+!.env.example
 
 # vercel
 .vercel

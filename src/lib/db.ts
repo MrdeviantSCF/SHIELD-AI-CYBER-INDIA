@@ -18,3 +18,19 @@ export const prisma: PrismaClient =
 if (process.env.NODE_ENV !== "production") {
   global.__shieldPrisma = prisma;
 }
+
+/**
+ * Reports whether a database connection string has been configured.
+ *
+ * Prisma constructs its client lazily, so `new PrismaClient()` succeeds without
+ * DATABASE_URL and only fails later with a PrismaClientInitializationError on
+ * the first query. Read paths that can degrade gracefully should call this
+ * first so they can serve a fallback instead of throwing during render.
+ *
+ * This reads `process.env` directly rather than going through `getEnv()` so it
+ * stays usable regardless of how environment validation is configured.
+ */
+export function isDatabaseConfigured(): boolean {
+  const url = process.env.DATABASE_URL;
+  return typeof url === "string" && url.trim().length > 0;
+}

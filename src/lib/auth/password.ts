@@ -3,7 +3,7 @@ import argon2 from "argon2";
 /**
  * Password hashing using Argon2id (OWASP-recommended parameters).
  */
-const ARGON2_OPTIONS: argon2.Options = {
+const ARGON2_OPTIONS: argon2.HashOptions = {
   type: argon2.argon2id,
   memoryCost: 19456, // ~19 MiB
   timeCost: 2,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 
 /**
  * Cinematic hero visualization: an original, abstract "digital investigation
@@ -41,18 +41,43 @@ const STAGE_LABELS = [
   "REPORT",
 ];
 
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+
+/**
+ * `prefers-reduced-motion` is external browser state, so it is read through
+ * useSyncExternalStore rather than mirrored into useState from an effect.
+ * Subscribing directly avoids the cascading re-render that calling setState
+ * synchronously inside an effect body would cause, and keeps the value
+ * consistent during concurrent rendering.
+ */
+function subscribeToReducedMotion(onStoreChange: () => void): () => void {
+  const mq = window.matchMedia(REDUCED_MOTION_QUERY);
+  mq.addEventListener("change", onStoreChange);
+  return () => mq.removeEventListener("change", onStoreChange);
+}
+
+function getReducedMotionSnapshot(): boolean {
+  return window.matchMedia(REDUCED_MOTION_QUERY).matches;
+}
+
+/**
+ * The server cannot know the visitor's motion preference. Reporting `false`
+ * keeps the server-rendered markup identical to the client's first paint for
+ * the common case; if the visitor does prefer reduced motion, the subscription
+ * corrects it on hydration before any animation frame is scheduled.
+ */
+function getReducedMotionServerSnapshot(): boolean {
+  return false;
+}
+
 export function HeroPipeline() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [reducedMotion, setReducedMotion] = useState(false);
-
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setReducedMotion(mq.matches);
-    const handler = () => setReducedMotion(mq.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, []);
+  const reducedMotion = useSyncExternalStore(
+    subscribeToReducedMotion,
+    getReducedMotionSnapshot,
+    getReducedMotionServerSnapshot
+  );
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -64,7 +89,7 @@ export function HeroPipeline() {
 
     let width = 0;
     let height = 0;
-    let dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     let running = true;
     let visible = true;
 
@@ -74,7 +99,14 @@ export function HeroPipeline() {
     const NUM_PACKETS = 28;
     const NUM_LANES = 8;
 
-    function resize() {
+    // NOTE: these helpers are arrow functions bound to `const` rather than
+    // hoisted `function` declarations. TypeScript discards the non-null
+    // narrowing of `canvas`/`container`/`ctx` inside a hoisted declaration
+    // (it must assume the function could be invoked before the guards above
+    // ran), which previously produced dozens of TS18047 "possibly null"
+    // errors. Arrow functions defined after the guards keep the narrowing and
+    // also remove the hoisting hazard.
+    const resize = () => {
       const rect = container.getBoundingClientRect();
       width = rect.width;
       height = rect.height;
@@ -83,9 +115,9 @@ export function HeroPipeline() {
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    }
+    };
 
-    function initNodes() {
+    const initNodes = () => {
       nodes.length = 0;
       for (let i = 0; i < NUM_NODES; i++) {
         nodes.push({
@@ -97,9 +129,9 @@ export function HeroPipeline() {
           stage: Math.floor(Math.random() * STAGE_LABELS.length),
         });
       }
-    }
+    };
 
-    function initPackets() {
+    const initPackets = () => {
       packets.length = 0;
       for (let i = 0; i < NUM_PACKETS; i++) {
         packets.push({
@@ -109,7 +141,7 @@ export function HeroPipeline() {
           hue: 190 + Math.random() * 20,
         });
       }
-    }
+    };
 
     resize();
     initNodes();
@@ -128,7 +160,7 @@ export function HeroPipeline() {
     );
     io.observe(container);
 
-    function drawStatic() {
+    const drawStatic = () => {
       ctx.clearRect(0, 0, width, height);
       ctx.save();
       ctx.globalAlpha = 0.5;
@@ -141,7 +173,7 @@ export function HeroPipeline() {
         ctx.stroke();
       }
       ctx.restore();
-    }
+    };
 
     if (reducedMotion) {
       drawStatic();
@@ -151,7 +183,7 @@ export function HeroPipeline() {
       };
     }
 
-    function drawFrame() {
+    const drawFrame = () => {
       ctx.clearRect(0, 0, width, height);
 
       // Faint pipeline lanes (the stages flow left -> right).
@@ -252,16 +284,16 @@ export function HeroPipeline() {
         ctx.fillText(STAGE_LABELS[i], x, 16);
       }
       ctx.restore();
-    }
+    };
 
     let frameId: number;
-    function loop() {
+    const loop = () => {
       if (!running) return;
       if (visible && document.visibilityState === "visible") {
         drawFrame();
       }
       frameId = requestAnimationFrame(loop);
-    }
+    };
     frameId = requestAnimationFrame(loop);
 
     return () => {

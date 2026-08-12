@@ -9,7 +9,18 @@ import { z } from "zod";
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+
+  // Optional at the schema level so the application can boot — and the public
+  // site can render from server-side fallbacks — before a database has been
+  // provisioned. Making this required caused `getEnv()` to throw, which took
+  // down every consumer (sessions, CSRF, storage, chatbot) and not just the
+  // pages that query the database.
+  //
+  // This is NOT a relaxation of the production requirement: database-backed
+  // code paths are gated behind `isDatabaseConfigured()` and Prisma still
+  // reads this same variable via schema.prisma, so a real deployment must
+  // still supply it. See .env.example.
+  DATABASE_URL: z.string().min(1).optional(),
 
   // Session / auth secrets
   AUTH_SECRET: z.string().min(16, "AUTH_SECRET must be at least 16 characters").default("dev-insecure-auth-secret-change-me-please"),

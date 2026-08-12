@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/db";
-import type { AuditResult } from "@prisma/client";
+import type { AuditResult, Prisma } from "@prisma/client";
 
 export type AuditEntry = {
   actorId?: string | null;
@@ -11,7 +11,14 @@ export type AuditEntry = {
   ip?: string | null;
   userAgent?: string | null;
   requestId?: string | null;
-  metadata?: Record<string, unknown> | null;
+  /**
+   * Structured, non-sensitive context stored in the `Json?` column. Typed as
+   * Prisma's own JSON input object rather than `Record<string, unknown>`:
+   * `unknown` would allow values that are not JSON-serializable (functions,
+   * symbols, circular references) and fail at runtime, whereas this type is
+   * checked to be genuinely serializable.
+   */
+  metadata?: Prisma.InputJsonObject | null;
 };
 
 /**
